@@ -112,13 +112,9 @@ $btnRun.Add_Click({
         $other = Join-Path $source "other"
 
         if (-not $dryRun) {
-            foreach ($dir in @($installed, $unused, $other)) {
+            foreach ($dir in @($installed, $unused, $other)) {                
                 if (!(Test-Path $dir)) {
-                    try {
-                        New-Item -ItemType Directory -Force -Path $dir -ErrorAction Stop | Out-Null
-                    } catch {
-                        Write-Output "[JOB_ERROR] Failed to create directory ${dir}: $($_.Exception.Message)"
-                    }
+                    New-Item -ItemType Directory -Force -Path $dir | Out-Null
                 }
             }
         }
@@ -129,7 +125,7 @@ $btnRun.Add_Click({
 
             if (Test-Path $metaPath) {
                 $meta = @{}
-                $lines = Get-Content $metaPath -ErrorAction Stop
+                $lines = Get-Content $metaPath -ErrorAction SilentlyContinue
                 foreach ($line in $lines) {
                     if ($line -match '^([a-zA-Z0-9_]+)=(.+)$') {
                         $meta[$matches[1]] = $matches[2]
@@ -149,25 +145,13 @@ $btnRun.Add_Click({
 
                 Write-Output "$cat $($file.Name) -> $dest"
                 if (-not $dryRun) {
-                    try {
-                        Move-Item $file.FullName -Destination $dest -Force -ErrorAction Stop
-                    } catch {
-                        Write-Output "[JOB_ERROR] Failed to move $($file.Name) to ${dest}: $($_.Exception.Message)"
-                    }
-                    try {
-                        Move-Item $metaPath -Destination $dest -Force -ErrorAction Stop
-                    } catch {
-                        Write-Output "[JOB_ERROR] Failed to move $metaPath to ${dest}: $($_.Exception.Message)"
-                    }
+                    Move-Item $file.FullName -Destination $dest -Force
+                    Move-Item $metaPath -Destination $dest -Force                    
                 }
             } else {
                 Write-Output "[NOMETA] $($file.Name) -> $other"
                 if (-not $dryRun) {
-                    try {
-                        Move-Item $file.FullName -Destination $other -Force -ErrorAction Stop
-                    } catch {
-                        Write-Output "[JOB_ERROR] Failed to move $($file.Name) to ${other}: $($_.Exception.Message)"
-                    }
+                    Move-Item $file.FullName -Destination $other -Force
                 }
             }
         }

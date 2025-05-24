@@ -3,6 +3,7 @@ Add-Type -AssemblyName System.Drawing
 
 $scriptPath = $MyInvocation.MyCommand.Path
 $defaultFolder = Split-Path -Parent $scriptPath
+$organizerLogPath = Join-Path $PSScriptRoot "organize_activity.log"
 
 $form = New-Object System.Windows.Forms.Form
 $form.Text = "File Organizer"
@@ -67,7 +68,22 @@ $logTimer.Start()
 
 function Add-Log {
     param([string]$message)
+
+    # Add to UI log buffer (existing functionality)
     [void]$logBuffer.Add($message)
+
+    # Add to file log
+    try {
+        $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+        $logEntry = "$timestamp - $message"
+        Add-Content -Path $organizerLogPath -Value $logEntry -Encoding UTF8 -ErrorAction Stop
+    } catch {
+        # If file logging fails, output error to console/error stream.
+        # This won't go into the UI log via Add-Log to prevent recursion.
+        $uiErrorMessage = "[ERROR] Failed to write to log file: $($_.Exception.Message)"
+        [void]$logBuffer.Add($uiErrorMessage) # Try to add error to UI buffer as a fallback
+        Write-Error "FILE_LOG_ERROR: Failed to write to log file $organizerLogPath. Error: $($_.Exception.Message)"
+    }
 }
 
 function Parse-MetaFile {

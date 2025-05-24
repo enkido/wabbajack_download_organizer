@@ -117,7 +117,7 @@ $btnRun.Add_Click({
                     try {
                         New-Item -ItemType Directory -Force -Path $dir -ErrorAction Stop | Out-Null
                     } catch {
-                        Write-Output "[JOB_ERROR] Failed to create directory $dir: $($_.Exception.Message)"
+                        Write-Output "[JOB_ERROR] Failed to create directory ${dir}: $($_.Exception.Message)"
                     }
                 }
             }
@@ -152,12 +152,12 @@ $btnRun.Add_Click({
                     try {
                         Move-Item $file.FullName -Destination $dest -Force -ErrorAction Stop
                     } catch {
-                        Write-Output "[JOB_ERROR] Failed to move $($file.Name) to $dest: $($_.Exception.Message)"
+                        Write-Output "[JOB_ERROR] Failed to move $($file.Name) to ${dest}: $($_.Exception.Message)"
                     }
                     try {
                         Move-Item $metaPath -Destination $dest -Force -ErrorAction Stop
                     } catch {
-                        Write-Output "[JOB_ERROR] Failed to move $metaPath to $dest: $($_.Exception.Message)"
+                        Write-Output "[JOB_ERROR] Failed to move $metaPath to ${dest}: $($_.Exception.Message)"
                     }
                 }
             } else {
@@ -166,7 +166,7 @@ $btnRun.Add_Click({
                     try {
                         Move-Item $file.FullName -Destination $other -Force -ErrorAction Stop
                     } catch {
-                        Write-Output "[JOB_ERROR] Failed to move $($file.Name) to $other: $($_.Exception.Message)"
+                        Write-Output "[JOB_ERROR] Failed to move $($file.Name) to ${other}: $($_.Exception.Message)"
                     }
                 }
             }

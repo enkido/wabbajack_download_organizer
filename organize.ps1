@@ -53,7 +53,7 @@ $form.Controls.Add($lstLog)
 
 $logBuffer = New-Object System.Collections.ArrayList
 $logTimer = New-Object System.Windows.Forms.Timer
-$logTimer.Interval = 1000
+$logTimer.Interval = 200
 $logTimer.Add_Tick({
     if ($logBuffer.Count -gt 0) {
         foreach ($msg in $logBuffer) {
@@ -176,7 +176,7 @@ $btnRun.Add_Click({
 					}
 				}
 			}
-			Add-Log "Done"
+			Write-Output "JOB_EVENT: Processing complete."
 		} -ArgumentList $source, $dryRun -ErrorAction Stop # Added -ErrorAction Stop here
 
         if ($null -ne $job) {
@@ -209,7 +209,7 @@ $btnRun.Add_Click({
                 $jobStillRunning = $false
                 Add-Log "BTN_CLICK_POLL: Job ID $($job.Id) is in a terminal state: $jobState."
             } else {
-                Start-Sleep -Milliseconds 500 # Wait before next poll
+                Start-Sleep -Milliseconds 100 # Wait before next poll
             }
         }
 

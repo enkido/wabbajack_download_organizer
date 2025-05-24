@@ -3,7 +3,7 @@ Add-Type -AssemblyName System.Drawing
 
 $scriptPath = $MyInvocation.MyCommand.Path
 $defaultFolder = Split-Path -Parent $scriptPath
-$organizerLogPath = Join-Path $PSScriptRoot "organize_activity.log"
+$organizerLogPath = Join-Path $defaultFolder "organize_activity.log"
 
 $form = New-Object System.Windows.Forms.Form
 $form.Text = "File Organizer"
@@ -76,6 +76,7 @@ function Add-Log {
     try {
         $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
         $logEntry = "$timestamp - $message"
+		Write-Host $logEntry
         Add-Content -Path $organizerLogPath -Value $logEntry -Encoding UTF8 -ErrorAction Stop
     } catch {
         # If file logging fails, output error to console/error stream.
@@ -120,68 +121,117 @@ $btnRun.Add_Click({
         return
     }
 
-    $job = Start-Job -ScriptBlock {
-        param($source, $dryRun)
+    Add-Log "BTN_CLICK: Attempting to start job. Source: [$source], DryRun: [$dryRun]"
+    $job = $null # Initialize $job to null
+    try {
+        $job = Start-Job -ScriptBlock {
+            param($source, $dryRun)
 
-        $installed = Join-Path $source "installed"
-        $unused = Join-Path $source "unused"
-        $other = Join-Path $source "other"
+            $installed = Join-Path $source "installed"
+            $unused = Join-Path $source "unused"
+			$other = Join-Path $source "other"
 
-        if (-not $dryRun) {
-            foreach ($dir in @($installed, $unused, $other)) {                
-                if (!(Test-Path $dir)) {
-                    New-Item -ItemType Directory -Force -Path $dir | Out-Null
+			Write-Output "Start"
+			if (-not $dryRun) {
+				foreach ($dir in @($installed, $unused, $other)) {                
+					if (!(Test-Path $dir)) {
+						New-Item -ItemType Directory -Force -Path $dir | Out-Null
+					}
+				}
+			}
+
+			Get-ChildItem -Path $source -File | Where-Object { $_.Extension -ne ".meta" } | ForEach-Object {
+				$file = $_
+				$metaPath = $file.FullName + ".meta"
+
+				if (Test-Path $metaPath) {
+					$meta = @{}
+					$lines = Get-Content $metaPath -ErrorAction SilentlyContinue
+					foreach ($line in $lines) {
+						if ($line -match '^([a-zA-Z0-9_]+)=(.+)$') {
+							$meta[$matches[1]] = $matches[2]
+						}
+					}
+
+					if ($meta['installed'] -eq 'true') {
+						$dest = $installed
+						$cat = "[INSTALLED]"
+					} elseif ($meta['removed'] -eq 'true') {
+						$dest = $unused
+						$cat = "[UNUSED]"
+					} else {
+						$dest = $other
+						$cat = "[OTHER]"
+					}
+
+					Write-Output "$cat $($file.Name) -> $dest"
+					if (-not $dryRun) {
+						Move-Item $file.FullName -Destination $dest -Force
+						Move-Item $metaPath -Destination $dest -Force                    
+					}
+				} else {
+					Write-Output "[NOMETA] $($file.Name) -> $other"
+					if (-not $dryRun) {
+						Move-Item $file.FullName -Destination $other -Force
+					}
+				}
+			}
+			Add-Log "Done"
+		} -ArgumentList $source, $dryRun -ErrorAction Stop # Added -ErrorAction Stop here
+
+        if ($null -ne $job) {
+            Add-Log "BTN_CLICK: Job object created. ID: $($job.Id), Initial State: $($job.State)"
+        } else {
+            Add-Log "BTN_CLICK: Job object was NULL after Start-Job call."
+        }
+    } catch {
+        Add-Log "BTN_CLICK: ERROR during Start-Job call: $($_.Exception.ToString())"
+    }
+
+    if ($null -ne $job) {
+        Add-Log "BTN_CLICK: Starting to poll job ID $($job.Id)."
+        $jobStillRunning = $true
+        while ($jobStillRunning) {
+            $jobState = $job.JobStateInfo.State
+            Add-Log "BTN_CLICK_POLL: Job ID $($job.Id) state: $jobState"
+
+            # Try to get output without blocking or changing job state
+            # Receive-Job by default uses -Keep for running jobs
+            $currentOutput = Receive-Job -Job $job
+            if ($null -ne $currentOutput) {
+                foreach ($line in $currentOutput) {
+                    # Using Add-Log here relies on Add-Log writing to the file log.
+                    Add-Log "JOB_POLLED_OUTPUT: $line"
                 }
             }
-        }
 
-        Get-ChildItem -Path $source -File | Where-Object { $_.Extension -ne ".meta" } | ForEach-Object {
-            $file = $_
-            $metaPath = $file.FullName + ".meta"
-
-            if (Test-Path $metaPath) {
-                $meta = @{}
-                $lines = Get-Content $metaPath -ErrorAction SilentlyContinue
-                foreach ($line in $lines) {
-                    if ($line -match '^([a-zA-Z0-9_]+)=(.+)$') {
-                        $meta[$matches[1]] = $matches[2]
-                    }
-                }
-
-                if ($meta['installed'] -eq 'true') {
-                    $dest = $installed
-                    $cat = "[INSTALLED]"
-                } elseif ($meta['removed'] -eq 'true') {
-                    $dest = $unused
-                    $cat = "[UNUSED]"
-                } else {
-                    $dest = $other
-                    $cat = "[OTHER]"
-                }
-
-                Write-Output "$cat $($file.Name) -> $dest"
-                if (-not $dryRun) {
-                    Move-Item $file.FullName -Destination $dest -Force
-                    Move-Item $metaPath -Destination $dest -Force                    
-                }
+            if ($jobState -in ([System.Management.Automation.JobState]::Completed, [System.Management.Automation.JobState]::Failed, [System.Management.Automation.JobState]::Stopped, [System.Management.Automation.JobState]::Suspended)) {
+                $jobStillRunning = $false
+                Add-Log "BTN_CLICK_POLL: Job ID $($job.Id) is in a terminal state: $jobState."
             } else {
-                Write-Output "[NOMETA] $($file.Name) -> $other"
-                if (-not $dryRun) {
-                    Move-Item $file.FullName -Destination $other -Force
-                }
+                Start-Sleep -Milliseconds 500 # Wait before next poll
             }
         }
-    } -ArgumentList $source, $dryRun
 
-    Register-ObjectEvent -InputObject $job -EventName StateChanged -Action {
-        if ($Event.SourceEventArgs.JobStateInfo.State -eq 'Completed') {
-            $output = Receive-Job -Job $Event.Sender
-            foreach ($line in $output) {
-                Add-Log $line
+        # Final attempt to get any remaining output
+        Add-Log "BTN_CLICK: Final Receive-Job for job ID $($job.Id)."
+        $finalOutput = Receive-Job -Job $job # This will also get remaining output and clear it for a completed job
+        if ($null -ne $finalOutput) {
+            foreach ($line in $finalOutput) {
+                Add-Log "JOB_FINAL_OUTPUT: $line"
             }
-            Remove-Job -Job $Event.Sender
         }
-    } | Out-Null
+        
+        Add-Log "BTN_CLICK: Removing job ID $($job.Id)."
+        Remove-Job -Job $job
+        Add-Log "BTN_CLICK: Polling finished for job ID $($job.Id)."
+
+    } else {
+        Add-Log "BTN_CLICK: Skipping polling loop because job object was null."
+    }
 })
 
+
+Write-Host $organizerLogPath
+Add-Log $organizerLogPath
 [void]$form.ShowDialog()
